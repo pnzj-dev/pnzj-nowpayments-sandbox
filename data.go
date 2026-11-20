@@ -123,18 +123,15 @@ func (d *DataService) snapshot(key string) json.RawMessage {
 	return nil
 }
 
-// SimulateQuote returns a deterministic estimate/min-amount for a pair.
+// SimulateQuote returns a plausible estimate/min-amount for a pair using the
+// reference rate table (live estimate is attempted by the server in live mode).
 func SimulateQuote(from, to string, amount float64) (minAmount float64, estimated float64) {
-	// deterministic pseudo-rates derived from the currency strings
-	rates := map[string]float64{"btc": 0.000010, "eth": 0.00016, "ltc": 0.0015, "usdttrc20": 1.0, "usdc": 1.0, "usdterc20": 1.0, "trx": 4.2, "doge": 5.5, "bnb": 0.0014, "xrp": 2.1}
-	rate := rates[to]
-	if rate == 0 {
-		rate = 0.001
-	}
-	minAmount = 0.5 * rate
-	estimated = amount * rate
+	// convert from -> usd -> to
+	usd := amount * usdRate(from)
 	if amount == 0 {
-		estimated = rate
+		usd = usdRate(to) // min-amount expressed in the target coin
 	}
+	estimated = usd / usdRate(to)
+	minAmount = 0.5 / usdRate(to)
 	return minAmount, estimated
 }

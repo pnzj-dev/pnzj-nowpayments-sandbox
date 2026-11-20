@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"strconv"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -71,7 +71,7 @@ func TestCreateAndGetPayment(t *testing.T) {
 	if p["payment_status"] != "waiting" {
 		t.Fatalf("expected waiting, got %v", p["payment_status"])
 	}
-	id := fmt.Sprintf("%v", p["payment_id"])
+	id := strconv.FormatInt(int64(p["payment_id"].(float64)), 10)
 	code, body = get(t, app, "/v1/payment/"+id)
 	if code != 200 {
 		t.Fatalf("get payment status=%d", code)

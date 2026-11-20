@@ -186,24 +186,32 @@ func (s *Server) estimate(c fiber.Ctx) error {
 func (s *Server) createPayment(c fiber.Ctx) error {
 	var in map[string]any
 	_ = c.Bind().Body(&in)
-	id := s.store.NextID("payment")
+	seq := s.store.NextID("payment")
 	now := time.Now().UTC().Format(time.RFC3339)
+	expire := time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
+	payCurrency := str(in["pay_currency"], "btc")
+	priceAmount := num(in["price_amount"])
+	_, payAmount := SimulateQuote(str(in["price_currency"], "usd"), payCurrency, priceAmount)
 	p := Payment{
-		PaymentID:    parseInt64(id),
-		PaymentStatus: "waiting",
-		PayAddress:   fmt.Sprintf("sandbox-%s-%s", coinCode(in["pay_currency"]), id),
-		PriceAmount:  num(in["price_amount"]),
-		PriceCurrency: str(in["price_currency"], "usd"),
-		PayCurrency:  str(in["pay_currency"], "btc"),
-		PayAmount:    num(in["pay_amount"]),
-		OrderID:      str(in["order_id"], ""),
-		OrderDescription: str(in["order_description"], ""),
-		IPNCallbackURL: str(in["ipn_callback_url"], ""),
-		CreatedAt:    now,
-		UpdatedAt:    now,
-		Network:      "sandbox",
+		PaymentID:             LargeID(parseInt64(seq)),
+		PaymentStatus:         "waiting",
+		PayAddress:            Address(payCurrency),
+		PayinExtraID:          "",
+		PriceAmount:           priceAmount,
+		PriceCurrency:         str(in["price_currency"], "usd"),
+		PayAmount:             payAmount,
+		ActuallyPaid:          0,
+		PayCurrency:           payCurrency,
+		OrderID:               str(in["order_id"], ""),
+		OrderDescription:      str(in["order_description"], ""),
+		IPNCallbackURL:        str(in["ipn_callback_url"], ""),
+		CreatedAt:             now,
+		UpdatedAt:             now,
+		ExpirationEstimateDate: expire,
+		Network:               Network(payCurrency),
+		NetworkPrecision:      8,
 	}
-	_ = s.store.Put("payment", id, p)
+	_ = s.store.Put("payment", itoa64(p.PaymentID), p)
 	return c.JSON(p)
 }
 
@@ -236,22 +244,25 @@ func (s *Server) updateEstimate(c fiber.Ctx) error {
 func (s *Server) createInvoice(c fiber.Ctx) error {
 	var in map[string]any
 	_ = c.Bind().Body(&in)
-	id := s.store.NextID("invoice")
+	seq := s.store.NextID("invoice")
+	token := TokenID()
+	now := time.Now().UTC().Format(time.RFC3339)
 	inv := fiber.Map{
-		"id": parseInt64(id), "token_id": "sandbox-" + id,
-		"order_id": str(in["order_id"], ""),
+		"id":                LargeID(parseInt64(seq)),
+		"token_id":          token,
+		"order_id":          str(in["order_id"], ""),
 		"order_description": str(in["order_description"], ""),
-		"price_amount": num(in["price_amount"]),
-		"price_currency": str(in["price_currency"], "usd"),
-		"pay_currency": str(in["pay_currency"], "btc"),
-		"ipn_callback_url": str(in["ipn_callback_url"], ""),
-		"invoice_url": fmt.Sprintf("%s/invoice/sandbox-%s", s.cfg.BaseURL, id),
-		"success_url": str(in["success_url"], ""),
-		"cancel_url": str(in["cancel_url"], ""),
-		"created_at": time.Now().UTC().Format(time.RFC3339),
-		"updated_at": time.Now().UTC().Format(time.RFC3339),
+		"price_amount":      num(in["price_amount"]),
+		"price_currency":    str(in["price_currency"], "usd"),
+		"pay_currency":      str(in["pay_currency"], "btc"),
+		"ipn_callback_url":  str(in["ipn_callback_url"], ""),
+		"invoice_url":       fmt.Sprintf("%s/payment/?iid=%s", s.cfg.BaseURL, token),
+		"success_url":       str(in["success_url"], ""),
+		"cancel_url":        str(in["cancel_url"], ""),
+		"created_at":        now,
+		"updated_at":        now,
 	}
-	_ = s.store.Put("invoice", id, inv)
+	_ = s.store.Put("invoice", itoa64(inv["id"].(int64)), inv)
 	return c.JSON(inv)
 }
 
@@ -273,14 +284,14 @@ func (s *Server) createPayout(c fiber.Ctx) error {
 		IPNCallbackURL string `json:"ipn_callback_url"`
 	}
 	_ = c.Bind().Body(&in)
-	id := s.store.NextID("payout")
+	seq := s.store.NextID("payout")
 	now := time.Now().UTC().Format(time.RFC3339)
 	addr, cur, amt := "", "", 0.0
 	if len(in.Withdrawals) > 0 {
 		addr, cur, amt = in.Withdrawals[0].Address, in.Withdrawals[0].Currency, in.Withdrawals[0].Amount
 	}
-	p := Payout{BatchWithdrawalID: parseInt64(id), Status: "pending", Address: addr, Currency: cur, Amount: amt, IPNCallbackURL: in.IPNCallbackURL, CreatedAt: now, UpdatedAt: now}
-	_ = s.store.Put("payout", id, p)
+	p := Payout{BatchWithdrawalID: LargeID(parseInt64(seq)), Status: "pending", Address: addr, Currency: cur, Amount: amt, IPNCallbackURL: in.IPNCallbackURL, CreatedAt: now, UpdatedAt: now}
+	_ = s.store.Put("payout", itoa64(p.BatchWithdrawalID), p)
 	return c.JSON(fiber.Map{"batch_withdrawal_id": p.BatchWithdrawalID, "status": p.Status})
 }
 

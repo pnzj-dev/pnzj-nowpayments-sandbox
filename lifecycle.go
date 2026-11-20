@@ -7,21 +7,25 @@ import (
 
 // Payment represents the simulated NOWPayments payment shape.
 type Payment struct {
-	PaymentID       int64   `json:"payment_id"`
-	InvoiceID       *string `json:"invoice_id"`
-	PaymentStatus   string  `json:"payment_status"`
-	PayAddress      string  `json:"pay_address"`
-	PriceAmount     float64 `json:"price_amount"`
-	PriceCurrency   string  `json:"price_currency"`
-	PayAmount       float64 `json:"pay_amount"`
-	ActuallyPaid    float64 `json:"actually_paid"`
-	PayCurrency     string  `json:"pay_currency"`
-	OrderID         string  `json:"order_id"`
-	OrderDescription string `json:"order_description"`
-	IPNCallbackURL  string  `json:"ipn_callback_url"`
-	CreatedAt       string  `json:"created_at"`
-	UpdatedAt       string  `json:"updated_at"`
-	Network         string  `json:"network"`
+	PaymentID             int64   `json:"payment_id"`
+	InvoiceID             *string `json:"invoice_id"`
+	PaymentStatus         string  `json:"payment_status"`
+	PayAddress            string  `json:"pay_address"`
+	PayinExtraID          string  `json:"payin_extra_id"`
+	PriceAmount           float64 `json:"price_amount"`
+	PriceCurrency         string  `json:"price_currency"`
+	PayAmount             float64 `json:"pay_amount"`
+	ActuallyPaid          float64 `json:"actually_paid"`
+	ActuallyPaidAtFiat    float64 `json:"actually_paid_at_fiat"`
+	PayCurrency           string  `json:"pay_currency"`
+	OrderID               string  `json:"order_id"`
+	OrderDescription      string  `json:"order_description"`
+	IPNCallbackURL        string  `json:"ipn_callback_url"`
+	CreatedAt             string  `json:"created_at"`
+	UpdatedAt             string  `json:"updated_at"`
+	ExpirationEstimateDate string `json:"expiration_estimate_date"`
+	Network               string  `json:"network"`
+	NetworkPrecision      int     `json:"network_precision"`
 }
 
 type Payout struct {
