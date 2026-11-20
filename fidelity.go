@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"math/big"
 	mrand "math/rand"
+	"sync"
 )
 
 // Realistic reference data so sandbox responses are shape/value-compatible
@@ -80,16 +81,61 @@ func TokenID() string {
 }
 
 // USD-per-coin reference rates (plausible late-2026 values). Used only as the
-// offline/deterministic fallback; live estimate is preferred in live mode.
+// offline/deterministic fallback; live rates (DIA, no API key) are preferred
+// in live mode and refreshed alongside currencies.
 var usdRates = map[string]float64{
 	"btc": 95000, "eth": 3200, "ltc": 90, "doge": 0.30, "usdttrc20": 1, "usdc": 1,
 	"usdterc20": 1, "trx": 0.24, "bnb": 600, "xrp": 2.3, "sol": 180, "kas": 0.12,
 	"not": 0.008, "peipei": 0.000001, "tet": 0.5, "bat": 0.18, "hoge": 0.00002,
 }
 
-func usdRate(currency string) float64 {
-	if r, ok := usdRates[currency]; ok && r > 0 {
-		return r
+// diaSymbols maps NOWPayments currency codes to DIA quotation symbols.
+var diaSymbols = map[string]string{
+	"btc": "BTC", "eth": "ETH", "ltc": "LTC", "doge": "DOGE", "trx": "TRX",
+	"bnb": "BNB", "xrp": "XRP", "sol": "SOL", "kas": "KAS", "bat": "BAT",
+}
+
+// RateStore holds live USD rates with a thread-safe read path.
+type RateStore struct {
+	mu    sync.RWMutex
+	rates map[string]float64
+}
+
+func NewRateStore() *RateStore {
+	return &RateStore{rates: map[string]float64{}}
+}
+
+func (r *RateStore) Get(cur string) (float64, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	v, ok := r.rates[cur]
+	return v, ok
+}
+
+func (r *RateStore) Set(cur string, v float64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.rates[cur] = v
+}
+
+func isStablecoin(cur string) bool {
+	switch cur {
+	case "usdttrc20", "usdc", "usdterc20", "usdt", "usdcbase", "usdcsol", "usd1", "usd1sol":
+		return true
+	}
+	return false
+}
+
+// usdRate returns the live rate when available, else the fallback table, else 1.
+func usdRate(rates *RateStore, cur string) float64 {
+	if isStablecoin(cur) {
+		return 1.0
+	}
+	if v, ok := rates.Get(cur); ok && v > 0 {
+		return v
+	}
+	if v, ok := usdRates[cur]; ok && v > 0 {
+		return v
 	}
 	return 1.0
 }

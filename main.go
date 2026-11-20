@@ -164,7 +164,7 @@ func (s *Server) currencies(c fiber.Ctx) error {
 func (s *Server) minAmount(c fiber.Ctx) error {
 	from := c.Query("currency_from")
 	to := c.Query("currency_to")
-	min, _ := SimulateQuote(from, to, 0)
+	min, _ := s.data.SimulateQuote(from, to, 0)
 	return c.JSON(fiber.Map{
 		"currency_from": from, "currency_to": to, "min_amount": min,
 	})
@@ -174,7 +174,7 @@ func (s *Server) estimate(c fiber.Ctx) error {
 	from := c.Query("currency_from")
 	to := c.Query("currency_to")
 	amount := parseFloat(c.Query("amount"))
-	_, estimated := SimulateQuote(from, to, amount)
+	_, estimated := s.data.SimulateQuote(from, to, amount)
 	return c.JSON(fiber.Map{
 		"currency_from": from, "currency_to": to,
 		"amount_from": amount, "estimated_amount": estimated,
@@ -191,7 +191,7 @@ func (s *Server) createPayment(c fiber.Ctx) error {
 	expire := time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
 	payCurrency := str(in["pay_currency"], "btc")
 	priceAmount := num(in["price_amount"])
-	_, payAmount := SimulateQuote(str(in["price_currency"], "usd"), payCurrency, priceAmount)
+	_, payAmount := s.data.SimulateQuote(str(in["price_currency"], "usd"), payCurrency, priceAmount)
 	p := Payment{
 		PaymentID:             LargeID(parseInt64(seq)),
 		PaymentStatus:         "waiting",

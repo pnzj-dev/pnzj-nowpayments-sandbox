@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -22,10 +23,12 @@ type DataService struct {
 	fixedRate      json.RawMessage
 	lastRefresh    time.Time
 	refreshEvery   time.Duration
+
+	rates *RateStore
 }
 
 func NewDataService(mode string, refresh time.Duration) *DataService {
-	d := &DataService{mode: mode, refreshEvery: refresh}
+	d := &DataService{mode: mode, refreshEvery: refresh, rates: NewRateStore()}
 	d.loadOffline()
 	d.refresh()
 	return d
@@ -88,6 +91,35 @@ func (d *DataService) refresh() {
 		d.fixedRate = fr
 	}
 	d.mu.Unlock()
+
+	d.refreshRates()
+}
+
+// refreshRates pulls live USD quotes from DIA (free, no API key) for the mapped
+// symbols; failures leave the existing/fallback rates in place.
+func (d *DataService) refreshRates() {
+	client := http.Client{Timeout: 8 * time.Second}
+	for _, sym := range diaSymbols {
+		resp, err := client.Get("https://api.diadata.org/v1/quotation/" + sym + "/USD")
+		if err != nil {
+			continue
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+		var q struct {
+			Price float64 `json:"Price"`
+		}
+		if json.Unmarshal(body, &q) == nil && q.Price > 0 {
+			d.rates.Set(lower(sym), q.Price)
+		}
+	}
+}
+
+func lower(s string) string {
+	return strings.ToLower(s)
 }
 
 // StartRefreshLoop refreshes on a ticker (no-op in offline mode).
@@ -123,15 +155,14 @@ func (d *DataService) snapshot(key string) json.RawMessage {
 	return nil
 }
 
-// SimulateQuote returns a plausible estimate/min-amount for a pair using the
-// reference rate table (live estimate is attempted by the server in live mode).
-func SimulateQuote(from, to string, amount float64) (minAmount float64, estimated float64) {
-	// convert from -> usd -> to
-	usd := amount * usdRate(from)
+// SimulateQuote returns a plausible estimate/min-amount for a pair using live
+// rates when available (DIA), else the fallback table.
+func (d *DataService) SimulateQuote(from, to string, amount float64) (minAmount float64, estimated float64) {
+	usd := amount * usdRate(d.rates, from)
 	if amount == 0 {
-		usd = usdRate(to) // min-amount expressed in the target coin
+		usd = usdRate(d.rates, to)
 	}
-	estimated = usd / usdRate(to)
-	minAmount = 0.5 / usdRate(to)
+	estimated = usd / usdRate(d.rates, to)
+	minAmount = 0.5 / usdRate(d.rates, to)
 	return minAmount, estimated
 }
