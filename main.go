@@ -1,9 +1,6 @@
 package main
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -41,9 +38,12 @@ func main() {
 
 	s := &Server{cfg: cfg, store: store, data: data}
 
-	api := app.Group("/v1")
-	api.Get("/status", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"message": "OK"}) })
-	api.Post("/auth", s.auth)
+	// Public (no API key): status + auth.
+	app.Get("/v1/status", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"message": "OK"}) })
+	app.Post("/v1/auth", s.auth)
+
+	// Everything else requires x-api-key.
+	api := app.Group("/v1", s.keyAuth)
 
 	api.Get("/currencies", s.currencies)
 	api.Get("/full-currencies", func(c fiber.Ctx) error { return rawJSON(c, s.data.snapshot("full")) })
@@ -52,31 +52,31 @@ func main() {
 	api.Get("/estimate", s.estimate)
 
 	api.Post("/payment", s.createPayment)
-	api.Get("/payment", s.listPayments)
+	api.Get("/payment", s.bearerAuth, s.listPayments) // list is Bearer-protected
 	api.Get("/payment/:id", s.getPayment)
 	api.Post("/payment/:id/update-merchant-estimate", s.updateEstimate)
 
 	api.Post("/invoice", s.createInvoice)
 	api.Post("/invoice-payment", s.createPayment)
 
-	api.Get("/balance", s.balance)
+	api.Get("/balance", s.bearerAuth, s.balance)
 
-	api.Post("/payout", s.createPayout)
-	api.Get("/payout", s.listPayouts)
+	api.Post("/payout", s.bearerAuth, s.createPayout)
+	api.Get("/payout", s.bearerAuth, s.listPayouts)
 	api.Get("/payout/fee", s.payoutFee)
-	api.Post("/payout/validate-address", s.validateAddress)
-	api.Get("/payout-withdrawal/min-amount/:coin", s.minPayoutAmount)
-	api.Post("/payout/:id/verify", s.verifyPayout)
-	api.Post("/payout/:id/cancel", s.cancelPayout)
-	api.Post("/payout/:id/cancel-batch", s.cancelPayout)
-	api.Get("/payout/:id", s.getPayout)
+	api.Post("/payout/validate-address", s.bearerAuth, s.validateAddress)
+	api.Get("/payout-withdrawal/min-amount/:coin", s.bearerAuth, s.minPayoutAmount)
+	api.Post("/payout/:id/verify", s.bearerAuth, s.verifyPayout)
+	api.Post("/payout/:id/cancel", s.bearerAuth, s.cancelPayout)
+	api.Post("/payout/:id/cancel-batch", s.bearerAuth, s.cancelPayout)
+	api.Get("/payout/:id", s.bearerAuth, s.getPayout)
 
 	api.Post("/subscriptions", s.createSubscription)
 	api.Get("/subscriptions", s.listSubscriptions)
-	api.Get("/subscriptions/plans", s.listPlans)
-	api.Post("/subscriptions/plans", s.createPlan)
-	api.Patch("/subscriptions/plans/:id", s.updatePlan)
-	api.Get("/subscriptions/plans/:id", s.getPlan)
+	api.Get("/subscriptions/plans", s.bearerAuth, s.listPlans)
+	api.Post("/subscriptions/plans", s.bearerAuth, s.createPlan)
+	api.Patch("/subscriptions/plans/:id", s.bearerAuth, s.updatePlan)
+	api.Get("/subscriptions/plans/:id", s.bearerAuth, s.getPlan)
 	api.Get("/subscriptions/:id", s.getSubscription)
 	api.Delete("/subscriptions/:id", s.cancelSubscription)
 
@@ -85,25 +85,25 @@ func main() {
 	api.Get("/sub-partner", s.listSubPartners)
 	api.Get("/sub-partner/transfers", s.listTransfers)
 	api.Get("/sub-partner/transfer/:id", s.getTransfer)
-	api.Post("/sub-partner/transfer", s.createTransfer)
+	api.Post("/sub-partner/transfer", s.bearerAuth, s.createTransfer)
 	api.Post("/sub-partner/payment", s.subPartnerOp)
 	api.Post("/sub-partner/deposit", s.subPartnerOp)
 	api.Post("/sub-partner/write-off", s.subPartnerOp)
-	api.Get("/sub-partner/payments", s.listSubPartnerPayments)
+	api.Get("/sub-partner/payments", s.bearerAuth, s.listSubPartnerPayments)
 
-	api.Post("/conversion", s.createConversion)
-	api.Get("/conversion", s.listConversions)
-	api.Get("/conversion/:id", s.getConversion)
+	api.Post("/conversion", s.bearerAuth, s.createConversion)
+	api.Get("/conversion", s.bearerAuth, s.listConversions)
+	api.Get("/conversion/:id", s.bearerAuth, s.getConversion)
 
-	// fiat payouts: minimal catalogs (empty), echo accounts/payouts
-	api.Get("/fiat-payouts/providers", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"providers": []any{}}) })
-	api.Get("/fiat-payouts/fiat-currencies", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"currencies": []any{}}) })
-	api.Get("/fiat-payouts/crypto-currencies", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"currencies": []any{}}) })
-	api.Get("/fiat-payouts/payment-methods", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"methods": []any{}}) })
-	api.Post("/fiat-payouts/account", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"id": "sandbox-fiat-account"}) })
-	api.Get("/fiat-payouts/accounts", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"accounts": []any{}}) })
-	api.Post("/fiat-payouts", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"id": "sandbox-fiat-payout", "status": "processing"}) })
-	api.Get("/fiat-payouts", func(c fiber.Ctx) error { return c.JSON(fiber.Map{"payouts": []any{}}) })
+	// fiat payouts: minimal catalogs (empty), echo accounts/payouts — all Bearer
+	api.Get("/fiat-payouts/providers", s.bearerAuth, func(c fiber.Ctx) error { return c.JSON(fiber.Map{"providers": []any{}}) })
+	api.Get("/fiat-payouts/fiat-currencies", s.bearerAuth, func(c fiber.Ctx) error { return c.JSON(fiber.Map{"currencies": []any{}}) })
+	api.Get("/fiat-payouts/crypto-currencies", s.bearerAuth, func(c fiber.Ctx) error { return c.JSON(fiber.Map{"currencies": []any{}}) })
+	api.Get("/fiat-payouts/payment-methods", s.bearerAuth, func(c fiber.Ctx) error { return c.JSON(fiber.Map{"methods": []any{}}) })
+	api.Post("/fiat-payouts/account", s.bearerAuth, func(c fiber.Ctx) error { return c.JSON(fiber.Map{"id": "sandbox-fiat-account"}) })
+	api.Get("/fiat-payouts/accounts", s.bearerAuth, func(c fiber.Ctx) error { return c.JSON(fiber.Map{"accounts": []any{}}) })
+	api.Post("/fiat-payouts", s.bearerAuth, func(c fiber.Ctx) error { return c.JSON(fiber.Map{"id": "sandbox-fiat-payout", "status": "processing"}) })
+	api.Get("/fiat-payouts", s.bearerAuth, func(c fiber.Ctx) error { return c.JSON(fiber.Map{"payouts": []any{}}) })
 
 	go func() {
 		sig := make(chan os.Signal, 1)
@@ -142,14 +142,8 @@ func (s *Server) auth(c fiber.Ctx) error {
 	}
 	var in creds
 	_ = c.Bind().Body(&in)
-	now := time.Now()
-	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
-	payload := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"exp":%d,"sub":"%s"}`, now.Add(24*time.Hour).Unix(), in.Email)))
-	signing := header + "." + payload
-	mac := hmac.New(sha256.New, []byte(s.cfg.JWTSecret))
-	mac.Write([]byte(signing))
-	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	return c.JSON(fiber.Map{"token": signing + "." + sig})
+	token := signJWT(s.cfg.JWTSecret, time.Now().Add(24*time.Hour).Unix(), in.Email)
+	return c.JSON(fiber.Map{"token": token})
 }
 
 // ---- reference data ----

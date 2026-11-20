@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,6 +20,7 @@ type Config struct {
 	DBPath              string
 	BaseURL             string
 	JWTSecret           string
+	APIKeys             []string
 	FixedRateCurrencies []string
 }
 
@@ -60,5 +62,19 @@ func LoadConfig() Config {
 		DBPath:            env("DB_PATH", "./sandbox.db"),
 		BaseURL:           env("BASE_URL", "http://localhost:8787"),
 		JWTSecret:         env("JWT_SECRET", "sandbox-jwt-secret"),
+		APIKeys:           splitCSV(env("API_KEYS", "")),
 	}
+}
+
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
